@@ -1,0 +1,74 @@
+# Weekly rebuild of the historical-match site from Cricsheet.
+#
+# This file is published to `.github/workflows/build.yml` of the PUBLIC repo
+# `tm-droid/bouncer-history` by `publish-history-builder.yml` in the app repo, together with the
+# builder. Edit it there, in `appwrite/tools/history/`, never here: the next publish replaces this
+# repo's `main`.
+#
+# It runs here, not in the app repo, because a public repo's Actions minutes are free and the app
+# repo's are not.
+#
+# The site is the `gh-pages` branch, replaced by a single orphan commit each week so the repo never
+# accumulates history: a rebuild rewrites most files, and keeping each would grow the repo by the
+# whole site every Monday. Only Cricsheet-derived data may go in (ODC-BY, attribution in the app and
+# the site README). Never add anything scraped from Cricbuzz or Cricinfo: the repo is public.
+#
+# `main` must stay the default branch: GitHub runs scheduled workflows from it only.
+
+name: Build history site
+
+on:
+  schedule:
+    # After the win-probability refit (02:00), which downloads the same archive.
+    - cron: '30 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-history
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Test
+        run: npm test
+
+      - name: Download Cricsheet
+        run: curl -fsSL --retry 3 -o /tmp/all_json.zip https://cricsheet.org/downloads/all_json.zip
+
+      # Fails over 900 MB: GitHub Pages refuses a site over 1 GB.
+      # Weather is fetched for matches the published site (the self-cache) lacks, at most
+      # WEATHER_LIMIT Open-Meteo calls, paced at 0.7 s: the free tier allows 5,000 an hour and
+      # 10,000 a day. A failure builds without weather for those matches.
+      - name: Build
+        env:
+          WEATHER_LIMIT: '4500'
+        run: node build.mjs /tmp/all_json.zip /tmp/site
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd /tmp/site
+          git init -q -b gh-pages
+          git add -A
+          git -c user.name="bouncer-history" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "Cricsheet build $(date -u +%Y-%m-%d)"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+          echo "published $(git ls-files | wc -l) files"

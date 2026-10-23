@@ -1,0 +1,12 @@
+{
+  "name": "bouncer-history",
+  "private": true,
+  "type": "module",
+  "description": "Builds the historical-match site (GitHub Pages, tm-droid/bouncer-history) from Cricsheet. Runs from tm-droid/bouncer-history (workflow/build.yml), published by .github/workflows/publish-history-builder.yml.",
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "adm-zip": "^0.6.1"
+  }
+}
